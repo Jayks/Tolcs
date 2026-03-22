@@ -349,6 +349,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let apiKey = localStorage.getItem('tolaram_openai_key') || '';
     
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
     // Auto-load from .env if available (for local dev convenience)
     async function loadEnv() {
         if (apiKey) return; // Already have it locally
@@ -368,16 +370,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setupActiveChat() {
-        openaiKeyInput.value = '********';
+        if (!isLocalhost) {
+            openaiKeyInput.value = '********'; // Visual masking
+        }
         chatInput.disabled = false;
         sendChat.disabled = false;
         apiKeyConfig.style.display = 'none';
     }
 
-    if (apiKey) {
+    if (!isLocalhost) {
+        // Vercel handles the API key in the proxy!
         setupActiveChat();
     } else {
-        loadEnv();
+        // Localhost needs the .env or manual key
+        if (apiKey) {
+            setupActiveChat();
+        } else {
+            loadEnv();
+        }
     }
 
     const chatBackdrop = document.getElementById('chat-backdrop');
@@ -416,7 +426,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleChat() {
         const text = chatInput.value.trim();
-        if (!text || !apiKey) return;
+        // If we're on localhost but have no key, don't send
+        if (!text || (isLocalhost && !apiKey)) return;
 
         addMessage('User', text);
         chatInput.value = '';
@@ -489,6 +500,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function callOpenAI(userMessage) {
+        if (!isLocalhost) {
+            // Secure Vercel Proxy Usage: no API key exposed to frontend
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: userMessage })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Proxy API request failed');
+            }
+            return await res.json();
+        }
+
+        // --------- LOCALHOST ONLY PATH --------- //
         const systemPrompt = `You are the Tolaram AI Assistant. You only answer questions about the Tolaram Group and the AI/Analytics use cases presented in this dashboard.
         CONTEXT:
         - Tolaram Revenue: $1.2B
