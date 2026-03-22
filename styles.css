@@ -200,7 +200,7 @@ section {
 
 .btn.secondary {
     border: 1px solid var(--glass-border);
-    color: white;
+    color: var(--text-main);
 }
 
 .btn.secondary:hover {
