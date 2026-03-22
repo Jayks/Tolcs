@@ -335,5 +335,203 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // --- AI Chatbot Logic ---
+    const chatTrigger = document.getElementById('chat-trigger');
+    const chatWindow = document.getElementById('chat-window');
+    const closeChat = document.getElementById('close-chat');
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+    const sendChat = document.getElementById('send-chat');
+    const openaiKeyInput = document.getElementById('openai-key');
+    const saveKeyBtn = document.getElementById('save-key');
+    const apiKeyConfig = document.getElementById('api-key-config');
+    const quickQuestionBtns = document.querySelectorAll('.quick-question');
+
+    let apiKey = localStorage.getItem('tolaram_openai_key') || '';
+    
+    // Auto-load from .env if available (for local dev convenience)
+    async function loadEnv() {
+        if (apiKey) return; // Already have it locally
+        try {
+            const response = await fetch('.env');
+            if (response.ok) {
+                const text = await response.text();
+                const match = text.match(/OPENAI_API_KEY=(.+)/);
+                if (match && match[1] && match[1].trim() !== 'your_key_here') {
+                    apiKey = match[1].trim();
+                    setupActiveChat();
+                }
+            }
+        } catch (e) {
+            console.log('No .env file found or accessible.');
+        }
+    }
+
+    function setupActiveChat() {
+        openaiKeyInput.value = '********';
+        chatInput.disabled = false;
+        sendChat.disabled = false;
+        apiKeyConfig.style.display = 'none';
+    }
+
+    if (apiKey) {
+        setupActiveChat();
+    } else {
+        loadEnv();
+    }
+
+    const chatBackdrop = document.getElementById('chat-backdrop');
+
+    chatTrigger.addEventListener('click', () => {
+        chatWindow.classList.remove('closing');
+        chatWindow.classList.add('active');
+        chatBackdrop.classList.add('active');
+        chatTrigger.style.visibility = 'hidden';
+    });
+
+    function closeChatWindow() {
+        chatWindow.classList.add('closing');
+        chatBackdrop.classList.remove('active');
+        chatTrigger.style.visibility = 'visible';
+        setTimeout(() => {
+            chatWindow.classList.remove('active');
+            chatWindow.classList.remove('closing');
+        }, 300);
+    }
+
+    closeChat.addEventListener('click', closeChatWindow);
+    chatBackdrop.addEventListener('click', closeChatWindow);
+
+    saveKeyBtn.addEventListener('click', () => {
+        const val = openaiKeyInput.value.trim();
+        if (val && val !== '********') {
+            apiKey = val;
+            localStorage.setItem('tolaram_openai_key', apiKey);
+            apiKeyConfig.style.display = 'none';
+            chatInput.disabled = false;
+            sendChat.disabled = false;
+            addMessage('AI', 'API Key set successfully. I am ready to answer your questions about Tolaram!');
+        }
+    });
+
+    async function handleChat() {
+        const text = chatInput.value.trim();
+        if (!text || !apiKey) return;
+
+        addMessage('User', text);
+        chatInput.value = '';
+        
+        // Add loading indicator
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'message ai loading';
+        loadingDiv.innerHTML = '<span class="dot-flashing"></span>';
+        chatMessages.appendChild(loadingDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        try {
+            const { answer, followups } = await callOpenAI(text);
+            chatMessages.removeChild(loadingDiv);
+            addAIMessage(answer, followups);
+        } catch (error) {
+            chatMessages.removeChild(loadingDiv);
+            addAIMessage('Sorry, I encountered an error. Please check your API key or connection.', []);
+            console.error(error);
+        }
+    }
+
+    sendChat.addEventListener('click', handleChat);
+    chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleChat();
+    });
+
+    quickQuestionBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            chatInput.value = btn.textContent;
+            handleChat();
+        });
+    });
+
+    function addMessage(role, text) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${role.toLowerCase()}`;
+        msgDiv.textContent = text;
+        chatMessages.appendChild(msgDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        const qq = document.getElementById('quick-questions-bar');
+        if (qq && role === 'User') qq.style.display = 'none';
+    }
+
+    function addAIMessage(text, followups = []) {
+        // Message bubble
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'message ai';
+        msgDiv.textContent = text;
+        chatMessages.appendChild(msgDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        // Update the bottom suggestions bar with fresh follow-up chips
+        const bar = document.getElementById('quick-questions-bar');
+        if (bar) {
+            bar.style.display = 'block';
+            const grid = bar.querySelector('.questions-grid');
+            grid.innerHTML = ''; // Clear old chips
+            (followups && followups.length > 0 ? followups : []).forEach(q => {
+                const chip = document.createElement('button');
+                chip.className = 'quick-question';
+                chip.textContent = q;
+                chip.addEventListener('click', () => {
+                    chatInput.value = q;
+                    handleChat();
+                });
+                grid.appendChild(chip);
+            });
+        }
+    }
+
+    async function callOpenAI(userMessage) {
+        const systemPrompt = `You are the Tolaram AI Assistant. You only answer questions about the Tolaram Group and the AI/Analytics use cases presented in this dashboard.
+        CONTEXT:
+        - Tolaram Revenue: $1.2B
+        - Factories: 30, JV Entities: 6+
+        - Business Verticals: Consumer Goods, Infrastructure, Fintech.
+        - Strategic Presence: Nigeria, Estonia, Indonesia, South Africa, Egypt.
+        - Brands: Indomie, Kellogg's (JV), Hypo, Lush (JV).
+        - AI Use Cases: Sales Forecasting, Logistics Optimization, Predictive Maintenance, Quality Control, etc.
+        - Prioritization: Axis 1 (Impact), Axis 2 (Effort), Axis 3 (Data Readiness) → Phase 1-4 roadmap.
+
+        INSTRUCTIONS:
+        Always respond in valid JSON with exactly this structure:
+        { "answer": "<your answer here>", "followups": ["<question 1>", "<question 2>", "<question 3>"] }
+        - answer: concise, professional response (2-4 sentences).
+        - followups: 3 short, relevant follow-up questions the user might want to ask next.
+        - If the topic is outside the Tolaram context, still return the JSON but politely decline in the answer field.
+        - Never include markdown or extra keys. Return only raw JSON.`;
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-3.5-turbo',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userMessage }
+                ],
+                max_tokens: 500,
+                response_format: { type: 'json_object' }
+            })
+        });
+
+        if (!response.ok) throw new Error('API request failed');
+        const data = await response.json();
+        const parsed = JSON.parse(data.choices[0].message.content);
+        return {
+            answer: parsed.answer || data.choices[0].message.content,
+            followups: Array.isArray(parsed.followups) ? parsed.followups : []
+        };
+    }
+
     loadData();
 });

@@ -253,6 +253,51 @@
         </div>
     </div>
 
+    <!-- AI Chatbot UI -->
+    <div id="chat-backdrop" class="chat-backdrop"></div>
+    <div id="chat-trigger" class="chat-trigger animate-up delay-3" title="Ask anything about Tolaram">
+        <i class="fas fa-comment-alt"></i>
+    </div>
+
+    <div id="chat-window" class="chat-window">
+        <div class="chat-header">
+            <div class="chat-header-info">
+                <i class="fas fa-robot"></i>
+                <div>
+                    <h4>Tolaram AI Assistant</h4>
+                    <span class="status-dot"></span> Online
+                </div>
+            </div>
+            <button id="close-chat" class="close-chat"><i class="fas fa-times"></i></button>
+        </div>
+        
+        <div id="chat-messages" class="chat-messages">
+            <div class="message ai">
+                Hello! I'm your Tolaram AI Assistant. How can I help you today?
+            </div>
+        </div>
+
+        <div class="chat-input-area">
+            <div class="quick-questions" id="quick-questions-bar">
+                <p>Try asking:</p>
+                <div class="questions-grid">
+                    <button class="quick-question">What is Tolaram's revenue?</button>
+                    <button class="quick-question">List main AI use cases</button>
+                    <button class="quick-question">What are the 3 business verticals?</button>
+                    <button class="quick-question">How are use cases prioritized?</button>
+                </div>
+            </div>
+            <div id="api-key-config" class="api-key-config">
+                <input type="password" id="openai-key" placeholder="Enter OpenAI API Key to start...">
+                <button id="save-key">Set API Key</button>
+            </div>
+            <div class="input-wrapper">
+                <input type="text" id="chat-input" placeholder="Type your question..." disabled>
+                <button id="send-chat" disabled><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
 </html>
