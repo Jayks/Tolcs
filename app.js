@@ -349,20 +349,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let apiKey = localStorage.getItem('tolaram_openai_key') || '';
     
+    let telegramBotToken = '';
+    let telegramChatId = '';
+
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
     // Auto-load from .env if available (for local dev convenience)
     async function loadEnv() {
-        if (apiKey) return; // Already have it locally
+        if (apiKey && telegramBotToken) return; // Already have it locally
         try {
             const response = await fetch('.env');
             if (response.ok) {
                 const text = await response.text();
-                const match = text.match(/OPENAI_API_KEY=(.+)/);
-                if (match && match[1] && match[1].trim() !== 'your_key_here') {
-                    apiKey = match[1].trim();
-                    setupActiveChat();
-                }
+                text.split('\n').forEach(line => {
+                    const [key, ...val] = line.split('=');
+                    if (!key) return;
+                    const v = val.join('=').trim();
+                    if (key.trim() === 'OPENAI_API_KEY' && v !== 'your_key_here') apiKey = v;
+                    if (key.trim() === 'TELEGRAM_BOT_TOKEN') telegramBotToken = v;
+                    if (key.trim() === 'TELEGRAM_CHAT_ID') telegramChatId = v;
+                });
+                if (apiKey) setupActiveChat();
             }
         } catch (e) {
             console.log('No .env file found or accessible.');
@@ -381,12 +388,50 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!isLocalhost) {
         // Vercel handles the API key in the proxy!
         setupActiveChat();
+        trackVisitor();
     } else {
         // Localhost needs the .env or manual key
         if (apiKey) {
             setupActiveChat();
+        }
+        loadEnv().then(() => trackVisitor());
+    }
+
+    // --- Telegram Notification Logic ---
+    async function sendTelegramNotification(message) {
+        if (!isLocalhost) {
+            try {
+                await fetch('/api/notify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+            } catch (e) { console.error('Notify proxy failed:', e); }
         } else {
-            loadEnv();
+            if (!telegramBotToken || !telegramChatId) return;
+            try {
+                await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chat_id: telegramChatId, text: message, parse_mode: 'Markdown' })
+                });
+            } catch (e) { console.error('Local notify failed:', e); }
+        }
+    }
+
+    async function trackVisitor() {
+        // Only track once per session
+        if (sessionStorage.getItem('tolaram_visitor_tracked')) return;
+        sessionStorage.setItem('tolaram_visitor_tracked', 'true');
+
+        try {
+            const res = await fetch('https://ipapi.co/json/');
+            const data = await res.json();
+            const browserInfo = navigator.userAgent;
+            const msg = `🚨 *New Visitor on Tolaram Dashboard*\n\n📍 Location: ${data.city}, ${data.region}, ${data.country_name}\n🌐 IP: ${data.ip}\n🏢 ISP: ${data.org}\n💻 Device: ${browserInfo}`;
+            sendTelegramNotification(msg);
+        } catch (e) {
+            sendTelegramNotification(`🚨 *New Visitor on Tolaram Dashboard*\n\n(Could not retrieve IP data)`);
         }
     }
 
@@ -432,6 +477,9 @@ document.addEventListener('DOMContentLoaded', () => {
         addMessage('User', text);
         chatInput.value = '';
         
+        // Notify Telegram about the chat interaction
+        sendTelegramNotification(`💬 *New Chat Question*\n\n❓ Question: "${text}"`);
+
         // Add loading indicator
         const loadingDiv = document.createElement('div');
         loadingDiv.className = 'message ai loading';
